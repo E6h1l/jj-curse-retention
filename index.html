@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Retention Embed</title>
+<style>
+:root {
+  --pad: 20px;
+  --radius: 12px;
+  --bg: #f8fafc;
+  --fg: #111827;
+  --muted: #6b7280;
+  --grid: #e5e7eb;
+  --card: #ffffff;
+  --accent: #2563eb;
+  --accent-2: #1d4ed8;
+  --warn: #ef4444;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.5;
+}
+.container { width: 100%; margin: 0 auto; padding: var(--pad); max-width: 100%; }
+.header { text-align: center; margin-bottom: 12px; }
+.title { font-size: 1.25rem; font-weight: 700; margin-bottom: 4px; }
+.subtitle { font-size: .95rem; color: var(--muted); }
+.hint { font-size: .85rem; color: #9ca3af; margin-top: 6px; }
+.grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.card { background: var(--card); border-radius: var(--radius); padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.card-title { font-size: 1rem; font-weight: 600; margin-bottom: 10px; }
+.video-container { position: relative; width: 100%; height: 0; padding-bottom: 56.25%; border-radius: 8px; overflow: hidden; background: #000; }
+.video-container iframe, .video-container .youtube-player {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+}
+.current-time { text-align: center; padding: 8px; background: #f3f4f6; border-radius: 8px; font-size: .95rem; }
+.time-value { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 700; color: var(--accent); }
+.chart-container { background: var(--card); border-radius: var(--radius); padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.chart-wrapper { position: relative; height: clamp(260px, 45vw, 360px); border: 1px solid var(--grid); border-radius: 8px; background: #fff; }
+.chart-svg { width: 100%; height: 100%; background: transparent; border-radius: 8px; display:block; }
+.chart-line { fill: none; stroke: var(--accent); stroke-width: 3; cursor: pointer; }
+.chart-current-line { stroke: var(--warn); stroke-width: 2; stroke-dasharray: 5,5; }
+.chart-dot { fill: var(--accent-2); stroke: #fff; stroke-width: 2; r: 4; opacity: 0; }
+.chart-grid { stroke: var(--grid); stroke-width: 1; }
+.chart-axis { stroke: #888; stroke-width: 1; }
+.chart-text { font-size: 12px; fill: #666; text-anchor: middle; }
+.chart-label { font-size: 13px; font-weight: 700; fill: #374151; text-anchor: middle; }
+.tooltip {
+  position: absolute; background: var(--card); border: 1px solid var(--grid);
+  padding: 6px 8px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+  font-size: 13px; pointer-events: none; opacity: 0; transition: opacity .15s; z-index: 1000;
+}
+.footer { text-align: center; padding: 10px; color: var(--muted); font-size: .9rem; }
+
+/* Compact class for Notion embeds */
+body.compact {
+  --pad: 12px;
+  --radius: 10px;
+}
+body.compact .title { font-size: 1.1rem; }
+body.compact .chart-wrapper { height: clamp(220px, 40vw, 320px); }
+/* Optionally hide header/footer */
+.hidden { display: none !important; }
+
+/* Dark mode for matching Notion dark theme */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a;
+    --fg: #e5e7eb;
+    --muted: #9ca3af;
+    --grid: #253047;
+    --card: #0b1220;
+    --accent: #60a5fa;
+    --accent-2: #93c5fd;
+    --warn: #f87171;
+  }
+  .chart-axis { stroke: #a3a3a3; }
+  .chart-text { fill: #a3a3a3; }
+  .chart-wrapper { background: #0b1220; border-color: var(--grid); }
+  .current-time { background: #111827; }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header" id="hdr">
+    <div class="title">Retention</div>
+    <div class="subtitle" id="subtitle">YouTube відео</div>
+    <div class="hint" id="status">💡 Клік по графіку — перехід до часу у відео</div>
+  </div>
+
+  <div class="grid" id="video-block">
+    <div class="card">
+      <div class="card-title">🎥 Відео</div>
+      <div class="video-container">
+        <div id="youtube-frame" class="youtube-player"></div>
+      </div>
+      <div class="current-time">⏰ Поточний час: <span class="time-value" id="current-time">0:00</span></div>
+    </div>
+  </div>
+
+  <div class="chart-container" id="chart-block">
+    <div class="card-title" style="text-align:center;">📈 Графік збереження уваги</div>
+    <div class="chart-wrapper" id="chartWrapper">
+      <svg class="chart-svg" id="retentionChart"></svg>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+  </div>
+
+  <div class="footer" id="ftr">🎯 Натисніть на точку/лінію, щоб перейти у відео</div>
+</div>
+
+<script>
+const audienceData = [
+  {position: 0.00, retention: 94.76},
+  {position: 1.00, retention: 85.60},
+  {position: 2.00, retention: 79.80},
+  {position: 3.00, retention: 75.58},
+  {position: 4.00, retention: 72.95},
+  {position: 5.00, retention: 70.50},
+  {position: 6.00, retention: 67.87},
+  {position: 7.00, retention: 65.37},
+  {position: 8.00, retention: 63.89},
+  {position: 9.00, retention: 63.40},
+  {position: 10.00, retention: 62.83},
+  {position: 11.00, retention: 60.37},
+  {position: 12.00, retention: 59.64},
+  {position: 13.00, retention: 58.73},
+  {position: 14.00, retention: 57.32},
+  {position: 15.00, retention: 56.61},
+  {position: 16.00, retention: 55.62},
+  {position: 17.00, retention: 54.80},
+  {position: 18.00, retention: 54.11},
+  {position: 19.00, retention: 53.18},
+  {position: 20.00, retention: 52.64},
+  {position: 21.00, retention: 51.69},
+  {position: 22.00, retention: 51.37},
+  {position: 23.00, retention: 52.37},
+  {position: 24.00, retention: 49.91},
+  {position: 25.00, retention: 48.42},
+  {position: 26.00, retention: 47.38},
+  {position: 27.00, retention: 46.56},
+  {position: 28.00, retention: 45.69},
+  {position: 29.00, retention: 44.93},
+  {position: 30.00, retention: 44.22},
+  {position: 31.00, retention: 43.76},
+  {position: 32.00, retention: 43.15},
+  {position: 33.00, retention: 42.76},
+  {position: 34.00, retention: 42.62},
+  {position: 35.00, retention: 42.56},
+  {position: 36.00, retention: 42.34},
+  {position: 37.00, retention: 41.99},
+  {position: 38.00, retention: 42.51},
+  {position: 39.00, retention: 41.75},
+  {position: 40.00, retention: 39.10},
+  {position: 41.00, retention: 38.22},
+  {position: 42.00, retention: 37.58},
+  {position: 43.00, retention: 37.05},
+  {position: 44.00, retention: 36.57},
+  {position: 45.00, retention: 36.03},
+  {position: 46.00, retention: 35.41},
+  {position: 47.00, retention: 34.90},
+  {position: 48.00, retention: 34.64},
+  {position: 49.00, retention: 34.58},
+  {position: 50.00, retention: 34.24},
+  {position: 51.00, retention: 33.92},
+  {position: 52.00, retention: 33.60},
+  {position: 53.00, retention: 33.57},
+  {position: 54.00, retention: 34.05},
+  {position: 55.00, retention: 32.09},
+  {position: 56.00, retention: 31.16},
+  {position: 57.00, retention: 31.05},
+  {position: 58.00, retention: 30.94},
+  {position: 59.00, retention: 30.80},
+  {position: 60.00, retention: 30.89},
+  {position: 61.00, retention: 30.81},
+  {position: 62.00, retention: 30.80},
+  {position: 63.00, retention: 30.64},
+  {position: 64.00, retention: 30.44},
+  {position: 65.00, retention: 30.03},
+  {position: 66.00, retention: 29.85},
+  {position: 67.00, retention: 29.60},
+  {position: 68.00, retention: 29.49},
+  {position: 69.00, retention: 29.32},
+  {position: 70.00, retention: 30.13},
+  {position: 71.00, retention: 28.85},
+  {position: 72.00, retention: 28.89},
+  {position: 73.00, retention: 28.11},
+  {position: 74.00, retention: 27.83},
+  {position: 75.00, retention: 27.82},
+  {position: 76.00, retention: 27.44},
+  {position: 77.00, retention: 27.36},
+  {position: 78.00, retention: 27.18},
+  {position: 79.00, retention: 26.97},
+  {position: 80.00, retention: 26.46},
+  {position: 81.00, retention: 25.93},
+  {position: 82.00, retention: 25.58},
+  {position: 83.00, retention: 25.39},
+  {position: 84.00, retention: 25.01},
+  {position: 85.00, retention: 24.60},
+  {position: 86.00, retention: 24.25},
+  {position: 87.00, retention: 24.12},
+  {position: 88.00, retention: 24.06},
+  {position: 89.00, retention: 23.97},
+  {position: 90.00, retention: 23.83},
+  {position: 91.00, retention: 23.77},
+  {position: 92.00, retention: 23.80},
+  {position: 93.00, retention: 23.81},
+  {position: 94.00, retention: 23.77},
+  {position: 95.00, retention: 23.84},
+  {position: 96.00, retention: 23.86},
+  {position: 97.00, retention: 23.86},
+  {position: 98.00, retention: 23.74},
+  {position: 99.00, retention: 23.63}
+];
+
+let videoDurationSeconds = null;
+let currentVideoTime = 0;
+let currentLine = null;
+let youtubePlayer = null;
+let isPlayerReady = false;
+
+// ------- EMBED CONTROLS (query params) --------
+function qp(name, def=null) {
+  const v = new URLSearchParams(location.search).get(name);
+  return v === null ? def : v;
+}
+const compact = qp('compact','1') === '1';          // default ON for Notion
+const view = qp('view','both');                     // 'both' | 'chart' | 'video'
+const hideHeader = qp('hideHeader','1') === '1';    // default ON to save space
+const hideFooter = qp('hideFooter','1') === '1';    // default ON
+const chartH = parseInt(qp('h','0')) || 0;          // custom height in px
+const lazy = qp('lazy','1') === '1';                // lazy-load YouTube until click
+
+if (compact) document.body.classList.add('compact');
+if (hideHeader) document.getElementById('hdr').classList.add('hidden');
+if (hideFooter) document.getElementById('ftr').classList.add('hidden');
+if (view === 'chart') document.getElementById('video-block').classList.add('hidden');
+if (view === 'video') document.getElementById('chart-block').classList.add('hidden');
+if (chartH > 0) document.getElementById('chartWrapper').style.height = chartH + 'px';
+
+// --------- UTIL ---------
+function formatTime(seconds) {
+  if (seconds == null || isNaN(seconds)) return '--:--';
+  const m = Math.floor(seconds/60), s = Math.floor(seconds%60);
+  return m + ':' + s.toString().padStart(2,'0');
+}
+function percentToSeconds(percent) { return (videoDurationSeconds==null) ? null : (percent/100)*videoDurationSeconds; }
+function secondsToPercent(seconds) { return (videoDurationSeconds==null) ? 0 : (seconds/videoDurationSeconds)*100; }
+
+// --------- UI STATE ---------
+function updateCurrentTime(seconds) {
+  currentVideoTime = seconds;
+  document.getElementById('current-time').textContent = formatTime(seconds);
+  updateCurrentLine(seconds);
+}
+function updateCurrentLine(seconds) {
+  if (currentLine) currentLine.remove();
+  const svg = document.getElementById('retentionChart');
+  const rect = svg.getBoundingClientRect();
+  const margin = 60, chartWidth = rect.width - margin*2;
+  const x = margin + (secondsToPercent(seconds)/100) * chartWidth;
+  currentLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+  currentLine.setAttribute('x1', x);
+  currentLine.setAttribute('y1', 40);
+  currentLine.setAttribute('x2', x);
+  currentLine.setAttribute('y2', rect.height - 80);
+  currentLine.setAttribute('class','chart-current-line');
+  svg.appendChild(currentLine);
+}
+
+// --------- YT LOADING ---------
+function loadYouTube() {
+  if (window._ytLoaded) return;
+  window._ytLoaded = true;
+  const fallbackTimeout = setTimeout(createIframeFallback, 5000);
+  if (!window.YT) {
+    const tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    tag.onerror = () => { clearTimeout(fallbackTimeout); createIframeFallback(); };
+    document.head.appendChild(tag);
+    window.onYouTubeIframeAPIReady = () => { clearTimeout(fallbackTimeout); createYouTubePlayer(); };
+  } else {
+    clearTimeout(fallbackTimeout); createYouTubePlayer();
+  }
+}
+function createYouTubePlayer() {
+  try {
+    youtubePlayer = new YT.Player('youtube-frame', {
+      height: '100%', width: '100%', videoId: 'pqgH2xfmRj0',
+      playerVars: { enablejsapi: 1, origin: window.location.origin, playsinline: 1, controls: 1, rel: 0, modestbranding: 1 },
+      events: { onReady: onPlayerReady, onStateChange: onPlayerStateChange, onError: onPlayerError }
+    });
+  } catch (e) { createIframeFallback(); }
+}
+function createIframeFallback() {
+  const div = document.getElementById('youtube-frame');
+  if (!div) return;
+  div.innerHTML = '<iframe id="youtube-iframe" src="https://www.youtube.com/embed/pqgH2xfmRj0?enablejsapi=1&origin='+encodeURIComponent(window.location.origin)+'" frameborder="0" allowfullscreen style="width:100%;height:100%;border:0;"></iframe>';
+}
+function onPlayerError() { createIframeFallback(); }
+function onPlayerReady() {
+  isPlayerReady = true;
+  try {
+    const dur = youtubePlayer.getDuration();
+    if (dur && !isNaN(dur)) {
+      videoDurationSeconds = Math.floor(dur);
+      document.getElementById('subtitle').textContent = 'YouTube відео (' + formatTime(videoDurationSeconds) + ')';
+      createChart();
+    }
+  } catch (e) { }
+  setInterval(() => {
+    if (youtubePlayer && youtubePlayer.getCurrentTime) {
+      try { updateCurrentTime(youtubePlayer.getCurrentTime()); } catch(_){}
+    }
+  }, 500);
+}
+function onPlayerStateChange() { /* no-op */ }
+
+// Lazy: only load YT when the video block is visible or user interacts
+if (!lazy) loadYouTube();
+document.getElementById('video-block').addEventListener('click', () => loadYouTube(), { once: true });
+
+// --------- TOOLTIP ---------
+function showTooltip(event, position, retention) {
+  const tooltip = document.getElementById('tooltip');
+  const sec = percentToSeconds(position);
+  const label = (sec==null) ? (position.toFixed(0)+'%') : formatTime(sec);
+  tooltip.innerHTML = '<div><strong>Час: ' + label + '</strong></div>' +
+                      '<div>Збереження уваги: ' + retention.toFixed(2) + '%</div>';
+  tooltip.style.left = (event.pageX + 10) + 'px';
+  tooltip.style.top = (event.pageY - 10) + 'px';
+  tooltip.style.opacity = '1';
+}
+function hideTooltip() { document.getElementById('tooltip').style.opacity = '0'; }
+
+// --------- CHART ---------
+function getYScaleBounds() {
+  const mins = Math.min(...audienceData.map(d => d.retention));
+  const maxs = Math.max(...audienceData.map(d => d.retention));
+  const yMin = Math.max(0, Math.floor(mins/5)*5);
+  const yMax = Math.min(100, Math.ceil(maxs/5)*5);
+  return { yMin, yMax };
+}
+function createChart() {
+  const svg = document.getElementById('retentionChart');
+  if (!svg) return;
+  const rect = svg.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) { setTimeout(createChart, 100); return; }
+
+  const width = rect.width, height = rect.height;
+  const margin = 60, chartWidth = width - margin*2, chartHeight = height - margin*2;
+  svg.innerHTML = '';
+  let svgContent = '';
+
+  const b = getYScaleBounds();
+  const yMin = b.yMin, yMax = b.yMax;
+  const yRange = Math.max(1, yMax - yMin);
+
+  for (let i=0;i<=10;i++) {
+    const x = margin + (i/10)*chartWidth;
+    svgContent += '<line x1="'+x+'" y1="40" x2="'+x+'" y2="'+(height-80)+'" class="chart-grid"/>';
+    const label = (videoDurationSeconds==null) ? (i*10 + '%') : formatTime(percentToSeconds(i*10));
+    svgContent += '<text x="'+x+'" y="'+(height-60)+'" class="chart-text">'+label+'</text>';
+  }
+  const ySteps = Math.min(10, Math.floor(yRange/5)+1);
+  for (let i=0;i<=ySteps;i++) {
+    const yVal = yMin + (i/ySteps)*yRange;
+    const y = 40 + chartHeight - ((yVal - yMin)/yRange)*chartHeight;
+    svgContent += '<line x1="'+margin+'" y1="'+y+'" x2="'+(width-margin)+'" y2="'+y+'" class="chart-grid"/>';
+    svgContent += '<text x="'+(margin-10)+'" y="'+(y+4)+'" class="chart-text" text-anchor="end">'+yVal.toFixed(0)+'%</text>';
+  }
+  svgContent += '<line x1="'+margin+'" y1="'+(height-80)+'" x2="'+(width-margin)+'" y2="'+(height-80)+'" class="chart-axis"/>';
+  svgContent += '<line x1="'+margin+'" y1="40" x2="'+margin+'" y2="'+(height-80)+'" class="chart-axis"/>';
+  svgContent += '<text x="'+(width/2)+'" y="'+(height-20)+'" class="chart-label">Час відео ('+(videoDurationSeconds==null?'%':'хв:сс')+')</text>';
+  svgContent += '<text x="20" y="'+(height/2)+'" class="chart-label" transform="rotate(-90 20 '+(height/2)+')">Збереження уваги (%)</text>';
+
+  let pathData = '';
+  audienceData.forEach((p,i)=>{
+    const x = margin + (p.position/100)*chartWidth;
+    const y = 40 + chartHeight - ((p.retention - yMin)/yRange)*chartHeight;
+    pathData += (i===0 ? ('M '+x+' '+y) : (' L '+x+' '+y));
+  });
+  svgContent += '<path d="'+pathData+'" class="chart-line" style="cursor:pointer;"/>';
+
+  audienceData.forEach(p=>{
+    const x = margin + (p.position/100)*chartWidth;
+    const y = 40 + chartHeight - ((p.retention - yMin)/yRange)*chartHeight;
+    svgContent += '<circle cx="'+x+'" cy="'+y+'" class="chart-dot" data-position="'+p.position+'" data-retention="'+p.retention+'"/>';
+  });
+
+  svg.innerHTML = svgContent;
+
+  setTimeout(()=>{
+    const path = svg.querySelector('path');
+    if (path) path.addEventListener('click', (e)=>{
+      const r = svg.getBoundingClientRect();
+      const x = Math.min(Math.max(e.clientX - r.left, margin), width - margin);
+      const percent = ((x - margin)/chartWidth)*100;
+      const seconds = videoDurationSeconds==null ? 0 : percentToSeconds(percent);
+      if (lazy) loadYouTube();
+      setTimeout(()=> seekToTime(seconds), 50);
+    });
+    svg.querySelectorAll('.chart-dot').forEach(c=>{
+      const position = parseFloat(c.getAttribute('data-position'));
+      const retention = parseFloat(c.getAttribute('data-retention'));
+      c.addEventListener('mouseenter', (e)=>showTooltip(e, position, retention));
+      c.addEventListener('mouseleave', hideTooltip);
+      c.addEventListener('click', ()=>{
+        if (lazy) loadYouTube();
+        const s = percentToSeconds(position) ?? 0;
+        seekToTime(s); hideTooltip();
+      });
+    });
+  }, 10);
+}
+
+// --------- INIT ---------
+document.addEventListener('DOMContentLoaded', ()=>{
+  document.getElementById('status').textContent = '📊 Створення графіка...';
+  setTimeout(()=>{ try { createChart(); document.getElementById('status').textContent = lazy ? '▶️ Натисніть щоб завантажити відео' : '🎥 Підключення до YouTube...'; if (!lazy) loadYouTube(); } catch(e){ document.getElementById('status').textContent='⚠️ Помилка створення графіка'; } }, 60);
+  let t; window.addEventListener('resize', ()=>{ clearTimeout(t); t = setTimeout(createChart, 120); });
+});
+
+window.addEventListener('error', (e)=>{
+  console.error(e); document.getElementById('status').textContent = '⚠️ Сталася помилка';
+});
+
+// --------- SEEK ---------
+function seekToTime(seconds) {
+  updateCurrentTime(seconds);
+  if (youtubePlayer && youtubePlayer.seekTo && isPlayerReady) {
+    try { youtubePlayer.seekTo(seconds, true); return; } catch(_){}
+  }
+  const iframe = document.getElementById('youtube-iframe');
+  if (iframe && iframe.contentWindow) {
+    try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }), 'https://www.youtube.com'); return; } catch(_){}
+  }
+  if (iframe) {
+    iframe.src = 'https://www.youtube.com/embed/pqgH2xfmRj0?enablejsapi=1&origin=' + encodeURIComponent(window.location.origin) + '&start=' + Math.floor(seconds) + '&autoplay=1';
+  }
+}
+</script>
+</body>
+</html>
