@@ -447,7 +447,7 @@ function seekToTime(seconds) {
     try { iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [seconds, true] }), 'https://www.youtube.com'); return; } catch(_){}
   }
   if (iframe) {
-    iframe.src = 'https://www.youtube.com/embed/pqgH2xfmRj0?enablejsapi=1&origin=' + encodeURIComponent(window.location.origin) + '&start=' + Math.floor(seconds) + '&autoplay=1';
+    iframe.src = 'https://www.youtube.com/embed/FR7HbO8o8V4?enablejsapi=1&origin=' + encodeURIComponent(window.location.origin) + '&start=' + Math.floor(seconds) + '&autoplay=1';
   }
 }
 </script>
